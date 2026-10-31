@@ -751,6 +751,9 @@ fn finish_table_rows(ctx: &mut Ctx, input: TableRows<'_>) -> TableLayout {
         .collect();
     // Second pass: place cells with their row height, fills and borders.
     let mut out = Vec::with_capacity(rows.len());
+    // The shading of each vertical merge in progress, by grid column: its continuation rows
+    // draw it too.
+    let mut merge_fill: std::collections::HashMap<usize, Option<Rgb>> = std::collections::HashMap::new();
     for (ri, cells) in rows.into_iter().enumerate() {
         let rh = heights.get(ri).copied().unwrap_or(0.0);
         let exact = t.rows.get(ri).is_some_and(|r| r.props.height_rule == HeightRule::Exact && r.props.height.is_some_and(|h| h > 0.0));
@@ -767,11 +770,20 @@ fn finish_table_rows(ctx: &mut Ctx, input: TableRows<'_>) -> TableLayout {
                     k += 1;
                 }
             }
-            let rect = Rect::new(c.x, 0.0, c.w, span_h);
-            if c.vmerge != VMerge::Continue
-                && let Some(f) = c.fill
-            {
-                items.push(Placed::Fill { rect, color: f });
+            // A merged cell's shading is drawn row by row, each continuation row in the colour of
+            // the merge's first cell: where the table breaks across pages, each page shows only
+            // its own rows' part (one rectangle the merge's height ran on past the last row on
+            // the page, over the footer).
+            let fill = match c.vmerge {
+                VMerge::Continue => merge_fill.get(&c.g).copied().flatten(),
+                VMerge::Restart => {
+                    merge_fill.insert(c.g, c.fill);
+                    c.fill
+                }
+                VMerge::None => c.fill,
+            };
+            if let Some(f) = fill {
+                items.push(Placed::Fill { rect: Rect::new(c.x, 0.0, c.w, rh), color: f });
             }
             // Behind-text frames count towards vertical alignment even without inline content.
             // They do not increase the row's flow height.

@@ -2050,6 +2050,34 @@ fn a_vertical_merge_lays_out_as_one_cell() {
     assert_eq!((hit.2, hit.3), (0, 0));
 }
 
+/// A shaded vertical merge that breaks across pages is shaded on each page only as far as that
+/// page's rows: its shading never runs on past the table's last row on the page (over the
+/// footer), and the continuation on the next page is shaded too.
+#[test]
+fn a_shaded_merge_across_a_page_break_stops_at_each_pages_last_row() {
+    use wordcraft_doc::props::{Rgb, VMerge};
+    let grey = Rgb(217, 217, 217);
+    let mut d = Document::from_text("before\nafter");
+    let mut t = Table::new(80, 2, 468.0);
+    for (ri, row) in t.rows.iter_mut().enumerate() {
+        row.cells[0].props.vmerge = if ri == 0 { VMerge::Restart } else { VMerge::Continue };
+        row.cells[0].props.shading = Some(grey);
+        row.cells[1].blocks = vec![wordcraft_doc::para_block(wordcraft_doc::Paragraph::with_text("row", Default::default()))];
+    }
+    d.insert_block(StoryRef::Body, &Path::top(1), wordcraft_doc::Block::Table(t)).unwrap();
+    let l = lay(&d);
+    assert!(l.pages.len() >= 2, "the table breaks across pages");
+    for (pi, page) in l.pages.iter().take(2).enumerate() {
+        let fills: Vec<Rect> =
+            page.items.iter().filter_map(|i| if let Placed::Fill { rect, color } = i { (*color == grey).then_some(*rect) } else { None }).collect();
+        assert!(!fills.is_empty(), "page {pi} shades its part of the merge");
+        let table_bottom =
+            page.items.iter().filter_map(|i| if let Placed::Rule { y0, y1, .. } = i { Some(y0.max(*y1)) } else { None }).fold(0.0f32, f32::max);
+        let lowest = fills.iter().map(|r| r.bottom()).fold(0.0f32, f32::max);
+        assert!(lowest <= table_bottom + 0.5, "page {pi}: shading ends at {lowest}, the table at {table_bottom}");
+    }
+}
+
 /// A 1×3 table after "before" whose middle cell holds `text` running `dir`.
 fn turned_table(dir: TextDirection, text: &str, row: Option<f32>) -> Document {
     let mut d = Document::from_text("before\nafter");
