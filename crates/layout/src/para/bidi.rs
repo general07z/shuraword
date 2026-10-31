@@ -37,6 +37,56 @@ pub fn bidi_levels(text: &str, rtl_para: bool) -> Vec<u8> {
     info.levels.iter().map(|l| l.number()).collect()
 }
 
+/// [`bidi_levels`] for a left-to-right paragraph with right-to-left runs (`w:rtl`, byte ranges of
+/// `text`). Word lays such a run out right to left whatever its characters: its neutral and weak
+/// characters (a colon or a bracket at the end of an Arabic label) take the run's direction
+/// instead of the paragraph's (ECMA-376 §17.3.2.30). Each run is read as a right-to-left
+/// embedding (RLE … PDF), and the levels are mapped back onto `text`.
+pub fn bidi_levels_with_rtl_runs(text: &str, rtl_runs: &[std::ops::Range<usize>]) -> Vec<u8> {
+    let runs: Vec<&std::ops::Range<usize>> =
+        rtl_runs.iter().filter(|r| r.start < r.end && text.is_char_boundary(r.start) && text.get(r.start..r.end).is_some()).collect();
+    if runs.is_empty() {
+        return bidi_levels(text, false);
+    }
+    const RLE: char = '\u{202B}';
+    const PDF: char = '\u{202C}';
+    // The marked-up text, and for each of its bytes the byte of `text` it stands for (None for
+    // the inserted marks).
+    let mut marked = String::with_capacity(text.len() + runs.len() * 6);
+    let mut origin: Vec<Option<usize>> = Vec::with_capacity(marked.capacity());
+    let mut next = runs.iter().peekable();
+    let mut open: Option<usize> = None;
+    for (i, c) in text.char_indices() {
+        if open.is_some_and(|end| i >= end) {
+            marked.push(PDF);
+            origin.extend(std::iter::repeat_n(None, PDF.len_utf8()));
+            open = None;
+        }
+        while next.peek().is_some_and(|r| r.end <= i) {
+            next.next();
+        }
+        if open.is_none() && next.peek().is_some_and(|r| r.start == i) {
+            marked.push(RLE);
+            origin.extend(std::iter::repeat_n(None, RLE.len_utf8()));
+            open = next.next().map(|r| r.end);
+        }
+        marked.push(c);
+        origin.extend((0..c.len_utf8()).map(|k| Some(i + k)));
+    }
+    if open.is_some() {
+        marked.push(PDF);
+        origin.extend(std::iter::repeat_n(None, PDF.len_utf8()));
+    }
+    let info = unicode_bidi::ParagraphBidiInfo::new(&marked, Some(unicode_bidi::Level::ltr()));
+    let mut levels = vec![0u8; text.len()];
+    for (level, at) in info.levels.iter().zip(&origin) {
+        if let Some(slot) = at.and_then(|b| levels.get_mut(b)) {
+            *slot = level.number();
+        }
+    }
+    levels
+}
+
 /// Rule L2 of UAX #9: the visual order (left to right) of items with these levels: from the
 /// highest level down to the lowest odd one, reverse every run at that level or above.
 pub fn visual_order(levels: &[u8]) -> Vec<usize> {

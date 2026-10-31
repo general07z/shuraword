@@ -27,7 +27,7 @@ mod paragraph;
 mod proof;
 mod tabs;
 
-pub use bidi::{bidi_levels, visual_order};
+pub use bidi::{bidi_levels, bidi_levels_with_rtl_runs, visual_order};
 pub(crate) use builder::left_out;
 #[cfg(test)]
 use chars::{MISSING_ROMAN_FONT, lookup_family};

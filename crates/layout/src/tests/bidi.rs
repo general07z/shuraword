@@ -1,7 +1,7 @@
 //! Right-to-left and bidirectional layout: Persian paragraphs, mixed Persian/Latin lines,
 //! numbers and punctuation, caret and selection geometry.
 
-use crate::para::{bidi_levels, visual_order};
+use crate::para::{bidi_levels, bidi_levels_with_rtl_runs, visual_order};
 #[allow(unused_imports)]
 use crate::*;
 use wordcraft_doc::props::{Align, ParaProps};
@@ -81,6 +81,36 @@ fn levels_for_persian_with_latin_and_numbers() {
     let lv = bidi_levels("Hello سلام", false);
     assert_eq!(lv[0], 0);
     assert_eq!(lv[at("Hello سلام", 6)], 1);
+}
+
+/// A right-to-left run (`w:rtl`) in a left-to-right paragraph keeps its neutral characters on
+/// its own side, as Word does: an Arabic label's closing colon is drawn at the label's left end,
+/// not after it on the right. Text outside such runs is laid out as before.
+#[test]
+fn neutrals_in_a_right_to_left_run_follow_the_run() {
+    let label = "موقع الحكومة:";
+    let colon = label.len() - 1;
+    // Without the run property the colon follows the left-to-right paragraph: drawn last.
+    let plain = bidi_levels(label, false);
+    assert_eq!(plain[colon], 0);
+    // Marked right to left, the colon joins the run and is drawn first (leftmost).
+    let whole = [std::ops::Range { start: 0, end: label.len() }];
+    let lv = bidi_levels_with_rtl_runs(label, &whole);
+    assert_eq!(lv.len(), label.len());
+    assert_eq!(lv[colon] % 2, 1, "the colon takes the run's direction");
+    let chars: Vec<usize> = label.char_indices().map(|(i, _)| i).collect();
+    let char_levels: Vec<u8> = chars.iter().map(|&i| lv[i]).collect();
+    let order = visual_order(&char_levels);
+    assert_eq!(chars[order[0]], colon, "drawn at the left end");
+    // A Latin word before the run stays left to right and unchanged; no run, no change.
+    let mixed = "Site: موقع:";
+    let runs = [std::ops::Range { start: mixed.find('م').unwrap(), end: mixed.len() }];
+    let lv = bidi_levels_with_rtl_runs(mixed, &runs);
+    assert_eq!(&lv[..6], &bidi_levels(mixed, false)[..6]);
+    assert_eq!(lv[mixed.len() - 1] % 2, 1);
+    assert_eq!(bidi_levels_with_rtl_runs(mixed, &[]), bidi_levels(mixed, false));
+    // Ranges that don't fit the text are ignored rather than trusted.
+    assert_eq!(bidi_levels_with_rtl_runs(mixed, &[5..500, 1..2]).len(), mixed.len());
 }
 
 #[test]
