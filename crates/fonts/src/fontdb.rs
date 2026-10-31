@@ -32,6 +32,8 @@ use fallback_data::{RUN_FALLBACK_CACHE_CHARS, coverage_ranges, ranges_hold};
 #[cfg(not(target_arch = "wasm32"))]
 use names::CatalogEntry;
 pub(crate) use names::face_names;
+#[cfg(test)]
+use names::office_cloud_font_dirs;
 pub use names::{LocalName, base_style, name_language_matches, system_font_dirs};
 use names::{MAX_FILE_FACES, enumerate_faces, make_face};
 #[cfg(test)]
