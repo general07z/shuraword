@@ -198,6 +198,17 @@ pub(super) fn mini_font(tables: &[([u8; 4], Vec<u8>)]) -> Vec<u8> {
     font
 }
 
+/// Microsoft 365's cloud fonts (Aptos, its default since 2023, and the other fonts Office
+/// downloads when a document uses them): `<LOCALAPPDATA>\Microsoft\FontCache\<n>\CloudFonts`, one
+/// folder per family. They are installed for Office only, not in the Windows font folders, so a
+/// document set in Aptos falls back to another font unless these are scanned too.
+pub(crate) fn office_cloud_font_dirs(local_app_data: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let Ok(versions) = std::fs::read_dir(local_app_data.join("Microsoft").join("FontCache")) else { return Vec::new() };
+    let mut dirs: Vec<std::path::PathBuf> = versions.flatten().map(|v| v.path().join("CloudFonts")).filter(|d| d.is_dir()).collect();
+    dirs.sort();
+    dirs
+}
+
 /// The platform's font folders (the system's and the user's), scanned by [`FontDb::global`].
 /// Empty on wasm.
 pub fn system_font_dirs() -> Vec<std::path::PathBuf> {
@@ -225,7 +236,9 @@ pub fn system_font_dirs() -> Vec<std::path::PathBuf> {
         let root = std::env::var_os("WINDIR").map(std::path::PathBuf::from).unwrap_or_else(|| "C:\\Windows".into());
         dirs.push(root.join("Fonts"));
         if let Some(l) = std::env::var_os("LOCALAPPDATA") {
-            dirs.push(std::path::PathBuf::from(l).join("Microsoft\\Windows\\Fonts"));
+            let local = std::path::PathBuf::from(l);
+            dirs.push(local.join("Microsoft\\Windows\\Fonts"));
+            dirs.extend(office_cloud_font_dirs(&local));
         }
     } else {
         dirs.extend(["/usr/share/fonts", "/usr/local/share/fonts"].map(Into::into));

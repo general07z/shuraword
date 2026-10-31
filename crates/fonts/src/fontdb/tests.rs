@@ -378,3 +378,21 @@ fn named_instances_and_collection_members_are_capped() {
     // (under 0.1 s on a loaded machine) only backs up "read once", with room for a busy CI.
     assert!(started.elapsed() < std::time::Duration::from_secs(10), "{:?}", started.elapsed());
 }
+
+/// Microsoft 365's cloud fonts (Aptos, its default) live in `FontCache\<n>\CloudFonts`, outside
+/// the Windows font folders: they are found under any version folder, and a missing cache is
+/// simply none.
+#[test]
+fn office_cloud_font_folders_are_found_under_any_cache_version() {
+    let root = std::env::temp_dir().join(format!("wordcraft-cloudfonts-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    assert!(office_cloud_font_dirs(&root).is_empty(), "no cache, no folders");
+    let cache = root.join("Microsoft").join("FontCache");
+    std::fs::create_dir_all(cache.join("4").join("CloudFonts").join("Aptos")).unwrap();
+    std::fs::create_dir_all(cache.join("5").join("CloudFonts")).unwrap();
+    std::fs::create_dir_all(cache.join("6")).unwrap();
+    std::fs::write(cache.join("note.txt"), b"not a folder").unwrap();
+    let dirs = office_cloud_font_dirs(&root);
+    assert_eq!(dirs, vec![cache.join("4").join("CloudFonts"), cache.join("5").join("CloudFonts")]);
+    std::fs::remove_dir_all(&root).unwrap();
+}
