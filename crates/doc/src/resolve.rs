@@ -111,7 +111,13 @@ impl ResolvedChar {
             lang: c.lang.clone(),
             rtl: c.rtl.unwrap_or(false),
             cs: c.cs.unwrap_or(false),
-            font_cs: c.font_cs.clone().or_else(|| c.font.clone()).unwrap_or_else(|| crate::styles::BODY_FONT.to_string()),
+            // A named font serves complex-script text too, but the default body font doesn't: with
+            // no font named, Word draws Arabic in its own complex-script font (`COMPLEX_SCRIPT_FONT`).
+            font_cs: c
+                .font_cs
+                .clone()
+                .or_else(|| c.font.clone().filter(|f| f != crate::styles::BODY_FONT))
+                .unwrap_or_else(|| crate::styles::COMPLEX_SCRIPT_FONT.to_string()),
             font_ea: c.font_ea.clone(),
             size_cs: c.size_cs.or(c.size).unwrap_or(crate::props::DEFAULT_FONT_SIZE).clamp(1.0, 1638.0),
             bold_cs: c.bold_cs.or(c.bold).unwrap_or(false),
@@ -398,6 +404,22 @@ mod tests {
         assert_ne!(s.resolve_char(None, &CharProps::default()).font, "Wingdings");
         let direct = CharProps { sym_font: Some("Wingdings".into()), ..Default::default() };
         assert_eq!(s.resolve_char(None, &direct).font, "Wingdings");
+    }
+
+    /// Arabic in a document that names no font is drawn in Word's complex-script font, not in the
+    /// default body font (Word for Windows draws it in Arial next to Aptos Latin text). A font the
+    /// text names still serves it, and a named complex-script font wins.
+    #[test]
+    fn unnamed_complex_script_text_gets_words_own_font() {
+        let s = StyleSheet::builtin();
+        let unnamed = CharProps { rtl: Some(true), ..Default::default() };
+        let c = s.resolve_char(None, &unnamed);
+        assert_eq!((c.font.as_str(), c.complex().font.as_str()), (crate::styles::BODY_FONT, crate::styles::COMPLEX_SCRIPT_FONT));
+        assert_eq!(s.resolve_char(None, &CharProps::default()).complex().font, "Arial");
+        let named = CharProps { font: Some("TH Sarabun New".into()), ..unnamed.clone() };
+        assert_eq!(s.resolve_char(None, &named).complex().font, "TH Sarabun New");
+        let cs = CharProps { font_cs: Some("Simplified Arabic".into()), ..named };
+        assert_eq!(s.resolve_char(None, &cs).complex().font, "Simplified Arabic");
     }
 
     #[test]

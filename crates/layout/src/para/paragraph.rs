@@ -1,4 +1,4 @@
-use super::bidi::{Dir, bidi_levels, bidi_levels_with_rtl_runs, visual_order};
+use super::bidi::{Dir, bidi_levels, bidi_levels_with_runs, reads_left_to_right, visual_order};
 use super::builder::{Builder, left_out, overstrike};
 use super::chars::caps_char;
 use super::grid::{auto_space, snap_chars};
@@ -556,11 +556,18 @@ pub fn layout_para(p: &Paragraph, env: &ParaEnv) -> ParaLayout {
     let doc = env.doc;
     let rp = paragraph_props(p, env);
     let res = Resolver { doc, style: p.props.style.as_deref(), table: env.table.map(|t| &t.chr) };
-    // A left-to-right paragraph's right-to-left runs keep their neutral characters (a closing
-    // colon) on their own side, as Word does.
-    let rtl_runs: Vec<std::ops::Range<usize>> =
-        if rp.bidi { Vec::new() } else { p.run_ranges().filter(|(_, props)| res.char(props).rtl).map(|(range, _)| range).collect() };
-    let levels = if rtl_runs.is_empty() { bidi_levels(&p.text, rp.bidi) } else { bidi_levels_with_rtl_runs(&p.text, &rtl_runs) };
+    // Runs against the paragraph's direction keep their neutral characters (an Arabic label's
+    // closing colon, a web address's closing slash) on their own side, as Word does: right-to-left
+    // runs of a left-to-right paragraph, Latin runs of a right-to-left one.
+    let against: Vec<std::ops::Range<usize>> = p
+        .run_ranges()
+        .filter(|(range, props)| {
+            let rtl = res.char(props).rtl;
+            if rp.bidi { !rtl && p.text.get(range.clone()).is_some_and(reads_left_to_right) } else { rtl }
+        })
+        .map(|(range, _)| range)
+        .collect();
+    let levels = bidi_levels_with_runs(&p.text, rp.bidi, &against);
     let b = Builder { env, styles: Vec::new(), style_index: Default::default(), glyphs: Vec::new(), clusters: Vec::new(), levels, shown: Vec::new() };
     let cx = Cx { p, env, rp: &rp, res, math_props: doc.settings.math.clone().unwrap_or_default(), drop_first: drop_cap_char(p, &rp) };
     let mut sh = Shaped::new(b, env.eq_number);
