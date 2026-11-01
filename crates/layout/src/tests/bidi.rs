@@ -1,7 +1,7 @@
 //! Right-to-left and bidirectional layout: Persian paragraphs, mixed Persian/Latin lines,
 //! numbers and punctuation, caret and selection geometry.
 
-use crate::para::{bidi_levels, bidi_levels_with_rtl_runs, visual_order};
+use crate::para::{bidi_levels, bidi_levels_with_rtl_runs, bidi_levels_with_runs, reads_left_to_right, visual_order};
 #[allow(unused_imports)]
 use crate::*;
 use wordcraft_doc::props::{Align, ParaProps};
@@ -111,6 +111,41 @@ fn neutrals_in_a_right_to_left_run_follow_the_run() {
     assert_eq!(bidi_levels_with_rtl_runs(mixed, &[]), bidi_levels(mixed, false));
     // Ranges that don't fit the text are ignored rather than trusted.
     assert_eq!(bidi_levels_with_rtl_runs(mixed, &[5..500, 1..2]).len(), mixed.len());
+}
+
+/// The mirror case: a Latin run (no `w:rtl`) in a right-to-left paragraph keeps its neutral
+/// characters with it, as Word does. A web address after an Arabic label keeps its closing slash
+/// at its right end (Word draws `https://www.example.org/`), where the paragraph alone would put
+/// it at the address's left end (`/https://www.example.org`).
+#[test]
+fn neutrals_in_a_latin_run_of_an_arabic_paragraph_follow_the_run() {
+    let label = "الموقع الرسمي: ";
+    let address = "https://www.example.org/";
+    let line = format!("{label}{address}");
+    let slash = line.len() - 1;
+    let chars: Vec<usize> = line.char_indices().map(|(i, _)| i).collect();
+    let rightmost = |lv: &[u8]| {
+        let order = visual_order(&chars.iter().map(|&i| lv[i]).collect::<Vec<_>>());
+        // The visual position of the slash relative to the address's 'h' and last 'g'.
+        let pos = |byte: usize| order.iter().position(|&o| chars[o] == byte).unwrap();
+        (pos(slash), pos(label.len()), pos(slash - 1))
+    };
+    // The paragraph alone: the slash is drawn before (left of) the address.
+    let (s, h, g) = rightmost(&bidi_levels(&line, true));
+    assert!(s < h && s < g, "plain bidi puts the slash at the left");
+    // The address's run read left to right: the slash follows its last letter.
+    let run = [std::ops::Range { start: label.len(), end: line.len() }];
+    let (s, h, g) = rightmost(&bidi_levels_with_runs(&line, true, &run));
+    assert!(h < g && g < s && s == g + 1, "slash right after the address: h {h} g {g} slash {s}");
+    // The Arabic label still reads right to left, to the right of the address.
+    let lv = bidi_levels_with_runs(&line, true, &run);
+    assert_eq!(lv[0] % 2, 1);
+    // Which runs count: Latin letters and no Arabic; digits alone are left to the paragraph.
+    assert!(reads_left_to_right(address) && reads_left_to_right("Site: "));
+    assert!(!reads_left_to_right("2026/11/01") && !reads_left_to_right("موقع") && !reads_left_to_right("Site موقع"));
+    // No runs, no change; ranges that don't fit are ignored.
+    assert_eq!(bidi_levels_with_runs(&line, true, &[]), bidi_levels(&line, true));
+    assert_eq!(bidi_levels_with_runs(&line, true, &[3..900, 1..2]).len(), line.len());
 }
 
 #[test]
