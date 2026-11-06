@@ -460,6 +460,11 @@ pub const HEADING_BLUE: Rgb = Rgb(0x0F, 0x47, 0x61);
 /// Default body/heading fonts (theme minor/major). Substituted by layout when not installed.
 pub const BODY_FONT: &str = "Aptos";
 pub const HEADING_FONT: &str = "Aptos Display";
+/// The complex-script font (Arabic, Hebrew…, and every character of an `rtl` run) when nothing
+/// names one: Word's, not the run's Latin font. Measured in Word for Windows (Microsoft 365,
+/// 2026): a document with no styles, theme or `w:cs` draws Arabic in Arial while its Latin text
+/// is in Aptos; the Office theme's minor font for the Arabic script is Arial too.
+pub const COMPLEX_SCRIPT_FONT: &str = "Arial";
 
 fn chr() -> CharProps {
     CharProps::default()
